@@ -18,7 +18,7 @@
 
 
 
-  <meta name="keywords" content="人生如梦," />
+  <meta name="keywords" content="TT-Android," />
 
 
 
@@ -29,7 +29,7 @@
 
 
 
-  <title> 启程 // For The Dream </title>
+  <title> TT-Android架构设计 // For The Dream </title>
 </head>
 
 <body>
@@ -116,7 +116,7 @@
           
           
             
-              启程
+              TT-Android架构设计
             
           
         </h1>
@@ -124,17 +124,28 @@
 
       <div class="post-meta">
         <span class="post-time">
-          发表于 2015-04-20
+          发表于 2015-04-25
         </span>
 
+        
+          <span class="post-category">
+            &nbsp; | &nbsp; 分类于
+            
+              <a href="/categories/TeamTalk/">TeamTalk</a>
+
+              
+              
+
+            
+          </span>
         
 
         
           
             <span class="post-comments-count">
             &nbsp; | &nbsp;
-            <a href="/2015/04/20/启程/#comments" >
-              <span class="post-comments-count ds-thread-count" data-thread-key="2015/04/20/启程/"></span>
+            <a href="/2015/04/25/TT-Android架构设计/#comments" >
+              <span class="post-comments-count ds-thread-count" data-thread-key="2015/04/25/TT-Android架构设计/"></span>
             </a>
           </span>
           
@@ -148,7 +159,83 @@
       
 
       
-        <p>黄粱一梦20年。<br>迷茫过，彷徨过，痛苦过，沉思过，拼搏过，释然过。<br>我看到的世界，是我心中的世界。<br>未来，未知。<br>这样不是更美妙？<br>记录点滴，学习技术，享受生活。</p>
+        <h2 id="1-_架构总览">1. 架构总览</h2><p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework.jpg" alt=""></p>
+<a id="more"></a>
+<h2 id="2-_模块介绍">2. 模块介绍</h2><h3 id="2-1_协议封装与任务流程">2.1 协议封装与任务流程</h3><h4 id="1)_协议与任务的封装">1) 协议与任务的封装</h4><p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework_task&amp;protocol.png" alt="">  </p>
+<blockquote>
+<p>a. 协议有协议头(协议头因为格式相同，被抽象出来)和协议体组成，协议有两类：请求协议(request)和回复协议(response)；<br>b. 任务(action)由请求协议、回复协议和任务回调(callback)组成；<br>c. callback是针对客户端主动请求协议的相应处理，分别是成功回调、超时回调和失败回调；  </p>
+</blockquote>
+<h4 id="2)_消息(任务)流程">2) 消息(任务)流程</h4><p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework_task_flow_chart.png" alt="">  </p>
+<blockquote>
+<p>a. 由UI或SYSTEM触发一个消息的生成，随之将其投递到发送队列中，等待发送；<br>b. 消息发送线程会不停的从发送队列中拉取一个消息并发送出去，同时放入超时监测队列；而当网络断开时会等待若干时间并重新循环，若检测该消息在队列等待时间过长，则丢弃该消息并触发相应的失败回调；<br>c. 对于客户端主动请求，在收到服务端给予回复时，调用该消息的成功回调处理相应回复；<br>d. 对于超时线程监测超时的消息，移除超时监测队列，并调用超时回调。  </p>
+</blockquote>
+<p><br></p>
+<h3 id="2-2_定时任务">2.2 定时任务</h3><p>定时任务的实现主要由TimerHelper类与ITimerProcessor两个类，第一个类主要实现了Timer的功能，ITimerProcessor为一个接口，当要建立一个Timer的时候，需要新建立一个类实现ITimerProcessor中得process接口来处理具体的业务。</p>
+<p>TimerHelper类的内部封装了系统的Timer及TimerTask来实现，对外提供startTimer以及stopTimer接口。startTimer需要一个布尔类型的参数标志启动定时任务是需要执行一次，还是永久执行。<br>新生成TimerHelper实例的时候需要制定定时任务的时间以及定时触发处理接口ITimerProcessor的具体实现。</p>
+<p>当然在Timer的设计中，我们并没有完全采用系统提供的Timer类实现，有些Timer是我们采用线程模拟实现，这个主要是基于Java 中Timer的一些缺陷来考虑。下面简单介绍下四种Timer</p>
+<h4 id="2-2-1_心跳Timer">2.2.1 心跳Timer</h4><p>心跳Timer 是维持客户端与服务端长连一个强有力的保证。网络中接收发送都是使用socket的recv与send进行发送与接收，如果此套接字已经断开，则发送与接收数据都会出现问题，创建心跳机制，就是为了及时检测该套接字是否有效。</p>
+<p>所谓心跳就是给服务端发送一个自定义的包，来告诉服务端，自己在线，以确保长连的有效性。</p>
+<h4 id="2-2-2_发送超时Timer">2.2.2 发送超时Timer</h4><p>在开发网络应用程序的时候，处理业务和通讯流程之间经常会出现矛盾。这种矛盾主要是由于两者之间的不同步造成的。比如，网络的延迟较大，而实际业务处理的速度则相对比较快，那么如果处理完某一事务然后等待发送成功再处理下一个事务则会大大降低效率。所以我们建立了一个发送消息队列。这是一个典型的“生产者消费者”模型，业务逻辑将需要发送的数据放到消息队列中，SendPacketMonitor从消息队列中取出数据，并发送出去。</p>
+<p>由于使用了消息队列的模式，发送就变成了一种异步操作，业务逻辑将消息放入消息队列后，就可以进行其他的操作，而无法知道该消息是否真正发送成功。因此，我们在设计消息队列的时候采用了回调机制，业务方在放入消息队列的时候，必须实现onSuccess接口与onTimeOut接口，分别在发送成功与发送超时调用。</p>
+<p>发送超时Timer是自己采用线程来模拟实现的，在SendPacketMonitor类，作为消费者，会不停的从消息队列中取出数据，取出数据后，会判断该消息产生的时刻与当前时间相比较，如果发现时差已经超过系统定义的最大超时时间，则直接调用“生产者”的onTimeOut接口，通知其发送超时。</p>
+<h4 id="2-2-3_重连“Timer”">2.2.3 重连“Timer”</h4><p>重连是另一个保证长连的机制，虽然我们使用了心跳机制来保证长连，但是由于网络环境的复杂性，我们无法保证在一个连接开启后，就永远保持连接，因此，重连就成了另外一个保证。</p>
+<p>重连主要是为了当连接断开的时候，客户端能够自动快速的连接到服务端。为了系统的稳定性，及相应快速，重连Timer采用的是线程模拟Timer实现。</p>
+<p>重连的逻辑中，会去检测服务端的心跳包，如果发现长时间没有收到服务端的任何数据包，则认为该socket已经失效，并进行重连。</p>
+<p>在重连Timer中，为了防止雪崩效应的出现，我们在检测到socket失效，并不是立马进行重连，而是让客户端随机Sleep一段时间再去连接服务端，这样就可以使不同的客户端在服务端重启的时候不会同时去连接，从而造成雪崩效应。</p>
+<h4 id="2-2-4_好友状态Timer">2.2.4 好友状态Timer</h4><p>虽然在实现的逻辑中，服务端在好友状态变化的时候，会主动推送消息给客户端，但是我们还是设计了好友状态Timer。因为在网络复杂的环境中，有太多的未知因素。</p>
+<p>好友状态Timer的基本实现就是每隔一段时间发送一个数据包请求获得好友的状态信息。当收到响应数据包的时候，就会去更新Cache中的好友状态信息。  </p>
+<p><br></p>
+<h3 id="2-3状态管理">2.3状态管理</h3><h4 id="2-3-1_状态管理StateManager">2.3.1 状态管理StateManager</h4><p>状态管理就是一个多状态的状态机，其中包括Net状态管理(指硬件网络是否可用)，Socket状态管理(指与MsgServer的连接是否可用)。</p>
+<p>状态管理主要功能就是采集Net状态与Socket状态，提供两个接口notifyNetState与notifySocketState两个接口供Net状态管理与Socket状态管理调用，当接收到状态变化的时候会调用NetDispach进行网络状态变更分发</p>
+<h4 id="2-3-2_Net状态管理NetStateManager">2.3.2 Net状态管理NetStateManager</h4><p>Net状态管理指的是物理网络状态的管理，主要管理当前物理网络是否可用以及进行变化时进行监听，当监听到网络断开或者连上事件的时候，会调用状态管理notifyNetState接口。</p>
+<p>在应用启动的时候我们会注册网络变化广播接收  </p>
+<figure class="highlight scala"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">public <span class="class"><span class="keyword">class</span> <span class="title">ConnectionChangeReceiver</span> <span class="keyword"><span class="keyword">extends</span></span> <span class="title">BroadcastReceiver</span></span></span><br></pre></td></tr></table></figure>
+<p>Override他的<code>onReceive</code>函数，在<code>onReceive</code>函数中获取网络连接服务，然后调用NetStateManager的<code>setState</code>接口，通知状态变化。</p>
+<h4 id="2-3-3_Socket状态管理">2.3.3 Socket状态管理</h4><p>Socket状态管理指的是客户端与MsgServer之间的连接状态。当检测到连接不可用时，会调用该接口的<code>setState</code>接口设置状态。当socket的<code>channelConnected</code>、<code>exceptionCaught</code>与<code>channelDisconnected</code>函数被调用的时候以及在重连出现异常或失败的时候会通知进行状态变更。</p>
+<h4 id="2-3-4_状态变更分发">2.3.4 状态变更分发</h4><p>状态变更分发对外提供三个接口<code>register</code>，<code>unregister</code>与<code>dispachMsg</code>接口。外界如果关心网络状态变化事件，可以注册自己的Handler到该类，当网络状态发生变化的时候，会根据注册的Handler进行事件通知。</p>
+<p><strong><em>register</em></strong> 为提供注册的接口。</p>
+<p><strong><em>unregister</em></strong> 为取消注册的接口。</p>
+<p><strong><em>dispachMsg</em></strong> 为事件分发接口，当网络状态发生变化的时候，该接口会被调用，通知各个Handler进行处理。</p>
+<p><br></p>
+<h3 id="2-4_断线重连">2.4 断线重连</h3><p>断线重连机制是当IM与MsgServer断开后能够自动连接。断线重连为一个单独的线程，进行循环，当检测到NetState为不可用的时候，会随机睡眠1-9秒然后继续检测。同时会检测心跳包，当发现最后一次收到心跳包超过MAX_HEART_BEAT_TIME时间会认为Socket连接不可用而重置SocketState的状态。当检测到网络可用，Socket状态不可用的时候，就会启动断线重连机制，在进行断线重连之前，会进行连接次数判断，如果为第一次重连，则随机睡眠1秒多，这个机制主要是为了防止服务端出现异常而重启的时候大量的客户端同时连接上来而发生雪崩现象。如果不为第一次重连，则睡眠指定时间，该时间的计算公式如下： </p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">nSleep = (<span class="keyword">long</span>) Math.<span class="built_in">pow</span>(<span class="number">2</span>, mnReconnectCount);</span><br><span class="line"><span class="keyword">if</span>(nSleep &gt; <span class="number">16</span>) &#123;</span><br><span class="line">nSleep = <span class="number">16</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>该计算公式主要是为了防止大量的客户端不停的进行重连从而对服务端造成大量的压力，另外从节省客户端的能耗考虑。</p>
+<p>每次进行重连都会将重连次数累加，这个主要是为了防止以后需要对重连次数进行限制。<br>重连过程如下图：</p>
+<p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework_offline_reconnect.png" alt=""></p>
+<p><br></p>
+<h3 id="2-5_登陆">2.5 登陆</h3><p>登陆流程主要分为以下几个流程：  </p>
+<ol>
+<li>认证；  </li>
+<li>获取MsgServer地址；  </li>
+<li>登陆MsgServer。</li>
+</ol>
+<h4 id="2-5-1_认证">2.5.1 认证</h4><p>认证过程主要是对用户合法身份的验证，包括如下两个方面：</p>
+<p>从主客获取AppToken。该过程是一个反射调用，IM程序调用主客的获取Token接口获取到主客的AppToken，Dao等信息。</p>
+<p>拿从主客获取到得AppToken及Dao信息到IM的验证服务器去换取一个IMToken，该过程为一个Http调用。服务器会对上传的AppToken及Dao信息进行校验，如果校验成功，则会返回一个IMToken，以及LoginServer地址等信息，后期需要拿该Token到MsgServer进行登陆验证。</p>
+<p>认证的过程主要在TokenManager中实现，该类中还对Token时效进行了管理，当获取IMToken的时候会先对判断IMToken是否为空，如果为空则去获取AppToken等信息，再去服务端换取IMToken，否则判断Token的时效是否失效效，如果失效则获取AppToken并换取IMToken信息，如果有效，则直接返回IMToken。</p>
+<h4 id="2-5-2_获取MsgServer地址">2.5.2 获取MsgServer地址</h4><p>该过程是客户端通过验证时拿到的LoginServer地址建立Socket连接，并发送获取MsgServer请求，LoginServer会返回一个可用的MsgServer的Ip及Port。</p>
+<h4 id="2-5-3_登陆MsgServer">2.5.3 登陆MsgServer</h4><p>当经过3.2获取到MsgServer的IP及Port后，会根据给定的IP与Port与MsgServer建立一个Socket连接，当连接建立成功后。会携带获取到得IMToken，用户名等信息发送一个登陆请求包，如果登陆请求验证通过，客户端启动一个Timer与服务端发送心跳包保持长连接。</p>
+<p>以下为整个登陆的流程:</p>
+<p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework_login_flowchart.png" alt=""></p>
+<p><br></p>
+<h3 id="2-6_异步实现">2.6 异步实现</h3><p>异步的封装有两种实现方式：1、需要更新界面的异步；2、不需要更新界面的异步。两种实现的方式是不同的。同时异步还有一个异步管理类。</p>
+<h4 id="2-6-1_TaskTrigger类">2.6.1 TaskTrigger类</h4><p>TaskTrigger类主要用来注册以及管理各个Task，每生成一个异步实例，都需要通过trigger接口如果对于需要更新界面的异步，则直接调用AsyncTask的execute接口执行任务，否则将其放入Task的任务队列中，后台会通过process接口调用dotrigger接口执行具体的任务，执行结束后，调用task的callback接口。</p>
+<h4 id="2-6-2_需要更新界面的异步">2.6.2 需要更新界面的异步</h4><p>该方式主要集成Android自有的AsyncTask类，对其进行了一个简单的封装，该异步实现方式主要解决一些需要更新UI界面的异步，解决Android中飞UI线程不能更新UI的问题。</p>
+<h4 id="2-6-3_不需要更新界面的异步">2.6.3 不需要更新界面的异步</h4><p>该异步主要提供不需要更新UI的一些异步操作，该实现方式为新开启一个线程执行任务，当任务执行完成之后调用回调函数。</p>
+<p><br></p>
+<h3 id="2-7_本地缓存">2.7 本地缓存</h3><p>存消息时,根据缓存中之前一条消息的ID,获得新消息的唯一自增ID,将该消息存入DB。存消息时依赖三张表,联系人表,主消息表和附加消息表。首先会根据当前收发用户的ID从联系人表中得到两者的唯一联系ID,并设置消息中的联系ID,将该消息存入主消息表和附加消息表。</p>
+<p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework_cache_db_save_msg.png" alt=""></p>
+<p>读消息时,直接从DB中拉取即可,根据参数的不同拉取的消息不同。可以根据消息ID,拉取某一天消息,也可以根据起止消息ID,拉取指定偏移量和指定条数的消息列表。</p>
+<p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework_cache_db_read_msg.png" alt=""></p>
+<p>存用户信息时,判断该用户信息是否为空或合法,若为空或不合法,直接返回;若合法,则更新 缓存中的用户信息,用户信息只保留在缓存中。</p>
+<p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework_cache_db_save_userinfo.png" alt=""></p>
+<p>取用户信息时,先判断缓存中是否存在该用户信息,若存在,则直接返回该用户信息;否则返回null，由业务端选择是否发起取用户信息的操作。</p>
+<p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework_cache_db_read_userinfo.png" alt=""></p>
+<p>收发消息时,得到好友ID,判断缓存中得最近联系人ID列表中是否存在,若不存在则添加,否则 忽略;同样地,在获取最近联系人列表时也如此。</p>
+<p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework_cache_db_get_or_send_msg.png" alt=""></p>
+<p>首先获得最近联系人ID列表,然后从缓存中读取必要地信息,组合成最近联系人列表。另外,启用一个线程,每500毫秒来检测是否有新消息来通知UI主线程来更新界面</p>
+<p><img src="http://7xiow9.com1.z0.glb.clouddn.com/tt_android_framework_cache_db_get_recent_msg.png" alt="">  </p>
+<p><br><br><br><br>转载自蘑菇小侠客的<a href="http://mogu.io/android-im-design" target="_blank" rel="external">Android-IM架构设计</a></p>
 
       
     </div>
@@ -157,7 +244,7 @@
       
         <div class="post-tags">
           
-            <a href="/tags/人生如梦/"> #人生如梦 </a>
+            <a href="/tags/TT-Android/"> #TT-Android </a>
           
         </div>
       
@@ -166,11 +253,11 @@
         <div class="post-nav">
           <div class="post-nav-prev post-nav-item">
             
-              <a href="/2015/04/21/飘风不终朝，骤雨不终日/">飘风不终朝 骤雨不终日</a>
-            
           </div>
 
           <div class="post-nav-next post-nav-item">
+            
+              <a href="/2015/04/23/TeamTalk-Learning/">TeamTalk Learning</a>
             
           </div>
         </div>
@@ -186,8 +273,8 @@
     
       <div class="comments" id="comments">
         
-          <div class="ds-thread" data-thread-key="2015/04/20/启程/"
-               data-title="启程" data-url="http://blog.marku.in/2015/04/20/启程/">
+          <div class="ds-thread" data-thread-key="2015/04/25/TT-Android架构设计/"
+               data-title="TT-Android架构设计" data-url="http://blog.marku.in/2015/04/25/TT-Android架构设计/">
           </div>
         
       </div>
@@ -269,7 +356,7 @@
           <div class="post-toc">
             
             
-              <p class="post-toc-empty">此文章未包含目录</p>
+              <div class="post-toc-content"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-_架构总览"><span class="nav-number">1.</span> <span class="nav-text">1. 架构总览</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#2-_模块介绍"><span class="nav-number">2.</span> <span class="nav-text">2. 模块介绍</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1_协议封装与任务流程"><span class="nav-number">2.1.</span> <span class="nav-text">2.1 协议封装与任务流程</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1)_协议与任务的封装"><span class="nav-number">2.1.1.</span> <span class="nav-text">1) 协议与任务的封装</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2)_消息(任务)流程"><span class="nav-number">2.1.2.</span> <span class="nav-text">2) 消息(任务)流程</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2_定时任务"><span class="nav-number">2.2.</span> <span class="nav-text">2.2 定时任务</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#2-2-1_心跳Timer"><span class="nav-number">2.2.1.</span> <span class="nav-text">2.2.1 心跳Timer</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-2-2_发送超时Timer"><span class="nav-number">2.2.2.</span> <span class="nav-text">2.2.2 发送超时Timer</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-2-3_重连“Timer”"><span class="nav-number">2.2.3.</span> <span class="nav-text">2.2.3 重连“Timer”</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-2-4_好友状态Timer"><span class="nav-number">2.2.4.</span> <span class="nav-text">2.2.4 好友状态Timer</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3状态管理"><span class="nav-number">2.3.</span> <span class="nav-text">2.3状态管理</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#2-3-1_状态管理StateManager"><span class="nav-number">2.3.1.</span> <span class="nav-text">2.3.1 状态管理StateManager</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-3-2_Net状态管理NetStateManager"><span class="nav-number">2.3.2.</span> <span class="nav-text">2.3.2 Net状态管理NetStateManager</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-3-3_Socket状态管理"><span class="nav-number">2.3.3.</span> <span class="nav-text">2.3.3 Socket状态管理</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-3-4_状态变更分发"><span class="nav-number">2.3.4.</span> <span class="nav-text">2.3.4 状态变更分发</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4_断线重连"><span class="nav-number">2.4.</span> <span class="nav-text">2.4 断线重连</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5_登陆"><span class="nav-number">2.5.</span> <span class="nav-text">2.5 登陆</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#2-5-1_认证"><span class="nav-number">2.5.1.</span> <span class="nav-text">2.5.1 认证</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-5-2_获取MsgServer地址"><span class="nav-number">2.5.2.</span> <span class="nav-text">2.5.2 获取MsgServer地址</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-5-3_登陆MsgServer"><span class="nav-number">2.5.3.</span> <span class="nav-text">2.5.3 登陆MsgServer</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-6_异步实现"><span class="nav-number">2.6.</span> <span class="nav-text">2.6 异步实现</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#2-6-1_TaskTrigger类"><span class="nav-number">2.6.1.</span> <span class="nav-text">2.6.1 TaskTrigger类</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-6-2_需要更新界面的异步"><span class="nav-number">2.6.2.</span> <span class="nav-text">2.6.2 需要更新界面的异步</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#2-6-3_不需要更新界面的异步"><span class="nav-number">2.6.3.</span> <span class="nav-text">2.6.3 不需要更新界面的异步</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-7_本地缓存"><span class="nav-number">2.7.</span> <span class="nav-text">2.7 本地缓存</span></a></li></ol></li></ol></div>
             
           </div>
           <div class="post-toc-indicator-bottom post-toc-indicator"></div>
